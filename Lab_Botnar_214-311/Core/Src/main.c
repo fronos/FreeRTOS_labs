@@ -6,12 +6,13 @@
   ******************************************************************************
   * @attention
   *
-  * Copyright (c) 2022 STMicroelectronics.
-  * All rights reserved.
+  * <h2><center>&copy; Copyright (c) 2021 STMicroelectronics.
+  * All rights reserved.</center></h2>
   *
-  * This software is licensed under terms that can be found in the LICENSE file
-  * in the root directory of this software component.
-  * If no LICENSE file comes with this software, it is provided AS-IS.
+  * This software component is licensed by ST under BSD 3-Clause license,
+  * the "License"; You may not use this file except in compliance with the
+  * License. You may obtain a copy of the License at:
+  *                        opensource.org/licenses/BSD-3-Clause
   *
   ******************************************************************************
   */
@@ -32,6 +33,7 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+#define MY_STR "State of led pin is:  \r\n"
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -40,18 +42,24 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
- osThreadId test_taskHandle;
-/* USER CODE BEGIN PV */
+ UART_HandleTypeDef huart1;
 
+osThreadId test_taskHandle;
+/* USER CODE BEGIN PV */
+uint8_t input_value = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_USART1_UART_Init(void);
 void blink_led(void const * argument);
 
 /* USER CODE BEGIN PFP */
-
+void BlinkingLedUntilTask();
+void input_handler_task();
+void config_output_task();
+void led_status_task();
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -87,6 +95,7 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 
   /* USER CODE END 2 */
@@ -105,6 +114,7 @@ int main(void)
 
   /* USER CODE BEGIN RTOS_QUEUES */
   /* add queues, ... */
+  if (0) {
   /* USER CODE END RTOS_QUEUES */
 
   /* Create the thread(s) */
@@ -113,6 +123,12 @@ int main(void)
   test_taskHandle = osThreadCreate(osThread(test_task), NULL);
 
   /* USER CODE BEGIN RTOS_THREADS */
+  }
+//  xTaskCreate(BlinkingLedUntilTask, NULL, configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+  xTaskCreate(input_handler_task, NULL, configMINIMAL_STACK_SIZE, NULL, 1, NULL);
+  xTaskCreate(config_output_task, NULL, configMINIMAL_STACK_SIZE, NULL, 2, NULL);
+  xTaskCreate(led_status_task, NULL, configMINIMAL_STACK_SIZE, NULL, 3, NULL);
+  vTaskStartScheduler();
   /* add threads, ... */
   /* USER CODE END RTOS_THREADS */
 
@@ -122,6 +138,8 @@ int main(void)
   /* We should never get here as control is now taken by the scheduler */
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
+//  osKernelStop();
+
   while (1)
   {
     /* USER CODE END WHILE */
@@ -171,6 +189,39 @@ void SystemClock_Config(void)
 }
 
 /**
+  * @brief USART1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_USART1_UART_Init(void)
+{
+
+  /* USER CODE BEGIN USART1_Init 0 */
+
+  /* USER CODE END USART1_Init 0 */
+
+  /* USER CODE BEGIN USART1_Init 1 */
+
+  /* USER CODE END USART1_Init 1 */
+  huart1.Instance = USART1;
+  huart1.Init.BaudRate = 9600;
+  huart1.Init.WordLength = UART_WORDLENGTH_9B;
+  huart1.Init.StopBits = UART_STOPBITS_1;
+  huart1.Init.Parity = UART_PARITY_NONE;
+  huart1.Init.Mode = UART_MODE_TX_RX;
+  huart1.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN USART1_Init 2 */
+
+  /* USER CODE END USART1_Init 2 */
+
+}
+
+/**
   * @brief GPIO Initialization Function
   * @param None
   * @retval None
@@ -185,19 +236,118 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOA_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
-  HAL_GPIO_WritePin(GPIOC, GPIO_PIN_13, GPIO_PIN_RESET);
+  HAL_GPIO_WritePin(Led_GPIO_Port, Led_Pin, GPIO_PIN_RESET);
 
-  /*Configure GPIO pin : PC13 */
-  GPIO_InitStruct.Pin = GPIO_PIN_13;
+  /*Configure GPIO pin : Led_Pin */
+  GPIO_InitStruct.Pin = Led_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
-  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
+  HAL_GPIO_Init(Led_GPIO_Port, &GPIO_InitStruct);
 
 }
 
 /* USER CODE BEGIN 4 */
 
+void BlinkingLedTask()
+{
+	//инициализация
+	for(;;){ // тело задачи
+		HAL_GPIO_TogglePin(Led_GPIO_Port, Led_Pin);
+		vTaskDelay(50);
+	}
+	vTaskDelete(NULL);
+}
+
+void BlinkingLedUntilTask()
+{
+	//инициализация
+	TickType_t olSysTime;
+	const TickType_t period = 20;
+	olSysTime = xTaskGetTickCount();
+	char str[sizeof(MY_STR)] = MY_STR;
+
+	for(;;){ // тело задачи
+		HAL_GPIO_TogglePin(Led_GPIO_Port, Led_Pin);
+		if (HAL_GPIO_ReadPin(Led_GPIO_Port, Led_Pin)) {
+			str[21] = '1';
+//			status_led = 1;
+		} else {
+			str[21] = '0';
+		}
+
+		HAL_UART_Transmit(&huart1, (uint8_t *)str, sizeof(MY_STR), 100);
+		vTaskDelayUntil(&olSysTime, period);
+	}
+	vTaskDelete(NULL);
+}
+
+void vAplicationIdleHook(){
+	static uint32_t x = 0;
+	x++;
+}
+
+//в каких состояниях может находится эта задача?
+void input_handler_task()
+{
+	//инициализация
+	for (;;){
+		HAL_UART_Receive(&huart1, &input_value, 1, 1);
+	}
+	vTaskDelete(NULL);
+}
+
+//в каких состояниях может находится эта задача?
+void config_output_task()
+{
+	//инициализация
+	for (;;){
+		if (input_value) {
+			HAL_GPIO_WritePin(Led_GPIO_Port, Led_Pin, GPIO_PIN_RESET);
+		} else {
+			HAL_GPIO_WritePin(Led_GPIO_Port, Led_Pin, GPIO_PIN_SET);
+		}
+	}
+	vTaskDelete(NULL);
+}
+
+//в каких состояниях может находится эта задача?
+void led_status_task()
+{
+	//инициализация
+	TickType_t olSysTime;
+	const TickType_t period = 10;
+	olSysTime = xTaskGetTickCount();
+	char str[sizeof(MY_STR)] = MY_STR;
+
+	for(;;){ // тело задачи
+		if (HAL_GPIO_ReadPin(Led_GPIO_Port, Led_Pin)) {
+			str[21] = '1';
+		} else {
+			str[21] = '0';
+		}
+
+		HAL_UART_Transmit(&huart1, (uint8_t *)str, sizeof(MY_STR), 100);
+		vTaskDelayUntil(&olSysTime, period);
+	}
+	vTaskDelete(NULL);
+}
+
+
+void template_task()
+{
+	//инициализация
+	for (;;){ //поток
+
+	}
+	vTaskDelete(NULL);
+}
+
+//Вопрос: в каких состояниях могут находиться задачи led_status_task, config_output_task, input_handler_task
+//после запуска планировщика, если приоритеты равны:
+//а) led_status_task = 1, config_output_task = 2, input_handler_task = 3
+//б) led_status_task = 3, config_output_task = 1, input_handler_task = 2
+//в) led_status_task = 2, config_output_task = 3, input_handler_task = 1?
 /* USER CODE END 4 */
 
 /* USER CODE BEGIN Header_blink_led */
